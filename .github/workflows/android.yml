@@ -7,9 +7,6 @@ on:
         description: "Release tag"
         required: true
         default: "v2026.4-android"
-  push:
-    tags:
-      - "v*-android"
 
 permissions:
   contents: write
