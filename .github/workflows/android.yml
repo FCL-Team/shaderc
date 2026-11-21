@@ -37,11 +37,19 @@ jobs:
             -DSHADERC_SKIP_EXAMPLES=1 \
             -DSHADERC_SKIP_EXECUTABLES=1 \
             -DSHADERC_SKIP_COPYRIGHT_CHECK=1 \
-            -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined=spvSoftwareVersionString -Wl,--undefined=spvSoftwareVersionDetailsString"
+            -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined=spvSoftwareVersionString -Wl,--undefined=spvSoftwareVersionDetailsString -Wl,--undefined=spvFuzzerOptionsCreate -Wl,--undefined=spvReducerOptionsCreate"
           cmake --build build-${{ matrix.abi }} -j"$(nproc)"
           mkdir -p out
           cp build-${{ matrix.abi }}/libshaderc/libshaderc_shared.so out/libshaderc.so
           "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" out/libshaderc.so
+
+      - name: Check exported symbols
+        run: |
+          set -e
+          NM="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          for sym in spvSoftwareVersionString spvSoftwareVersionDetailsString spvFuzzerOptionsCreate spvReducerOptionsCreate; do
+            "$NM" -D --defined-only out/libshaderc.so | grep -q " $sym$" || { echo "missing symbol: $sym"; exit 1; }
+          done
 
       - name: Package
         run: |
