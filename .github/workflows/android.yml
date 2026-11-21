@@ -1,0 +1,76 @@
+name: Android build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag"
+        required: true
+        default: "v2026.4-android"
+  push:
+    tags:
+      - "v*-android"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sync dependencies
+        run: python3 utils/git-sync-deps
+
+      - name: Build libshaderc for Android ${{ matrix.abi }}
+        run: |
+          set -e
+          cmake -B build-${{ matrix.abi }} \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=24 \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DSHADERC_SKIP_TESTS=1 \
+            -DSHADERC_SKIP_EXAMPLES=1 \
+            -DSHADERC_SKIP_EXECUTABLES=1 \
+            -DSHADERC_SKIP_COPYRIGHT_CHECK=1 \
+            -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--undefined=spvSoftwareVersionString -Wl,--undefined=spvSoftwareVersionDetailsString"
+          cmake --build build-${{ matrix.abi }} -j"$(nproc)"
+          mkdir -p out
+          cp build-${{ matrix.abi }}/libshaderc/libshaderc_shared.so out/libshaderc.so
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" out/libshaderc.so
+
+      - name: Package
+        run: |
+          cd out
+          zip -9 ../libshaderc-${{ matrix.abi }}.zip libshaderc.so
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libshaderc-${{ matrix.abi }}
+          path: libshaderc-${{ matrix.abi }}.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: libshaderc-*
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: "*.zip"
+          fail_on_unmatched_files: true
